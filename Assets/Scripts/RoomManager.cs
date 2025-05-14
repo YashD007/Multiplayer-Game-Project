@@ -1,52 +1,39 @@
-using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using Photon.Pun;
 using Photon.Realtime;
 
 public class RoomManager : MonoBehaviourPunCallbacks
 {
-
     public GameObject player;
-    [Space]
+    public Transform[] spawnPoints;
+    public PhotonChatManager chatManager; // 👈 Drag your ChatManager here in the Inspector
 
-    public Transform SpawnPoint;
-
-
-    // Start is called before the first frame update
     void Start()
     {
-        Debug.Log("Connecting...");
-
+        PhotonNetwork.NickName = "Player" + Random.Range(1000, 9999);
         PhotonNetwork.ConnectUsingSettings();
     }
 
     public override void OnConnectedToMaster()
     {
-        base.OnConnectedToMaster();
-
-        Debug.Log("Connected to server");
-
         PhotonNetwork.JoinLobby();
     }
 
-
     public override void OnJoinedLobby()
     {
-        base.OnJoinedLobby();
-
-        PhotonNetwork.JoinOrCreateRoom("Test", null, null);
-
-        Debug.Log("We're Connected and in a room");
- 
+        RoomOptions options = new RoomOptions { MaxPlayers = 10 };
+        PhotonNetwork.JoinOrCreateRoom("Test", options, TypedLobby.Default);
     }
-
 
     public override void OnJoinedRoom()
     {
-        base.OnJoinedRoom();
-        Debug.Log("Joined a room");
+        int index = PhotonNetwork.LocalPlayer.ActorNumber - 1;
+        if (index >= spawnPoints.Length) index = 0;
 
-        GameObject _player = PhotonNetwork.Instantiate(player.name, SpawnPoint.position, Quaternion.identity);
+        Vector3 spawnPosition = spawnPoints[index].position + Vector3.up * 1.5f;
+        PhotonNetwork.Instantiate(player.name, spawnPosition, Quaternion.identity);
+
+        // ✅ Start chat after room is joined
+        chatManager.StartChat(PhotonNetwork.NickName);
     }
 }

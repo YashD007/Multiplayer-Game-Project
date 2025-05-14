@@ -1,8 +1,10 @@
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UI;
+using TMPro;
 using Photon.Pun;
 using Photon.Voice.Unity;
+using System.Collections;
 
 [RequireComponent(typeof(CharacterController))]
 [RequireComponent(typeof(PhotonView))]
@@ -24,6 +26,7 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
     [SerializeField] private Animator animator;
     [SerializeField] private GameObject playerCamera;
     [SerializeField] private Image micIcon;
+    private TMP_InputField chatInputField;
 
     private CharacterController controller;
     private PlayerInputActions inputActions;
@@ -34,6 +37,7 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
     private bool isGrounded;
     private bool hasJumped;
     private bool cutJumpShort;
+    private bool groundedDelayActive = true;
 
     private Recorder recorder;
 
@@ -44,13 +48,13 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
         recorder = GetComponent<Recorder>();
     }
 
-    private void Start()
+    private IEnumerator Start()
     {
         if (!photonView.IsMine)
         {
             if (playerCamera != null) playerCamera.SetActive(false);
             if (animator != null) animator.enabled = false;
-            return;
+            yield break;
         }
 
         if (playerCamera != null) playerCamera.SetActive(true);
@@ -58,8 +62,14 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
         if (recorder != null)
         {
             recorder.TransmitEnabled = true;
-            InvokeRepeating(nameof(UpdateMicUI), 0f, 0.1f); // update mic icon every 0.1s
+            InvokeRepeating(nameof(UpdateMicUI), 0f, 0.1f);
         }
+
+        yield return new WaitForSeconds(0.25f); // Prevent premature fall-through
+
+        chatInputField = GameObject.FindWithTag("ChatInput").GetComponent<TMP_InputField>();
+
+        groundedDelayActive = false;
     }
 
     private void OnEnable()
@@ -92,6 +102,9 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
     private void Update()
     {
         if (!photonView.IsMine) return;
+
+        if (chatInputField != null && chatInputField.isFocused) return;
+        if (groundedDelayActive) return;
 
         HandleGroundCheck();
         HandleMovement();
