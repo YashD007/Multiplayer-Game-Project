@@ -30,10 +30,7 @@ public class ThirdPersonCamera : MonoBehaviour
         Vector3 angles = transform.eulerAngles;
         yaw = angles.y;
         pitch = angles.x;
-
-        // Commented out so you can still use the mouse in chat or UI
         // Cursor.lockState = CursorLockMode.Locked;
-        // Cursor.visible = false;
     }
 
     private void LateUpdate()
@@ -47,12 +44,9 @@ public class ThirdPersonCamera : MonoBehaviour
 
     private void HandleInput()
     {
-        if (Input.GetMouseButton(1)) // Only rotate camera when RMB is held (optional)
-        {
-            yaw += Input.GetAxis("Mouse X") * mouseSensitivity;
-            pitch -= Input.GetAxis("Mouse Y") * mouseSensitivity;
-            pitch = Mathf.Clamp(pitch, pitchLimits.x, pitchLimits.y);
-        }
+        yaw += Input.GetAxis("Mouse X") * mouseSensitivity;
+        pitch -= Input.GetAxis("Mouse Y") * mouseSensitivity;
+        pitch = Mathf.Clamp(pitch, pitchLimits.x, pitchLimits.y);
     }
 
     private void UpdateRotation()
