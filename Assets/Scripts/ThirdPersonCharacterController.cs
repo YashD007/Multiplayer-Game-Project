@@ -12,6 +12,7 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
 {
     [Header("Movement Settings")]
     [SerializeField] private float moveSpeed = 5f;
+    [SerializeField] private float accelerationTime = 0.1f;
     [SerializeField] private float rotationSpeed = 10f;
 
     [Header("Jump & Gravity")]
@@ -29,46 +30,38 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
     private CharacterController controller;
     private PlayerInputActions inputActions;
     private Vector2 inputMove;
+    private Vector3 moveVelocity;
+    private Vector3 smoothVelocity;
     private Vector3 velocity;
 
     private bool isGrounded;
-    private bool hasJumped;
     private bool groundedDelayActive = true;
 
     private Recorder recorder;
     private TMP_InputField chatInputField;
 
     private void Awake()
-{
-    controller = GetComponent<CharacterController>();
-    recorder = GetComponent<Recorder>();
-    inputActions = new PlayerInputActions(); // ✅ moved here
-}
-
-
-    private IEnumerator Start()
     {
         controller = GetComponent<CharacterController>();
         recorder = GetComponent<Recorder>();
+        inputActions = new PlayerInputActions();
+        chatInputField = FindObjectOfType<TMP_InputField>();
+    }
 
-       if (!photonView.IsMine)
-{
-    if (playerCamera != null) playerCamera.SetActive(false);
-    // animator stays enabled so PhotonAnimatorView can drive it
-    yield break;
-}
-
+    private IEnumerator Start()
+    {
+        if (!photonView.IsMine)
+        {
+            if (playerCamera != null) playerCamera.SetActive(false);
+            yield break;
+        }
 
         if (playerCamera != null) playerCamera.SetActive(true);
-
         if (recorder != null)
         {
             recorder.TransmitEnabled = true;
             InvokeRepeating(nameof(UpdateMicUI), 0f, 0.1f);
         }
-
-        // Find chat input from scene (don't assign in prefab)
-        chatInputField = FindObjectOfType<TMP_InputField>();
 
         yield return new WaitForSeconds(0.25f);
         groundedDelayActive = false;
@@ -78,73 +71,76 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
     {
         if (!photonView.IsMine) return;
 
-        inputActions.Gameplay.Enable();
-        inputActions.Gameplay.Jump.performed += _ => hasJumped = true;
+        var gameplay = inputActions.Gameplay;
+        gameplay.Enable();
+        gameplay.Jump.performed += _ => TryJump();
+        gameplay.Interact.performed += _ => TryInteract();
     }
 
     private void OnDisable()
     {
         if (!photonView.IsMine) return;
 
-        inputActions.Gameplay.Jump.performed -= _ => hasJumped = true;
-        inputActions.Gameplay.Disable();
+        var gameplay = inputActions.Gameplay;
+        gameplay.Jump.performed -= _ => TryJump();
+        gameplay.Interact.performed -= _ => TryInteract();
+        gameplay.Disable();
     }
 
     private void Update()
-{
-    if (!photonView.IsMine) return;
+    {
+        if (!photonView.IsMine || groundedDelayActive) return;
 
-    if (groundedDelayActive) return;
-    if (chatInputField != null && chatInputField.isFocused) return;
+        // Pause all control if typing in chat
+        if (chatInputField != null && chatInputField.isFocused)
+        {
+            animator.SetBool("IsMoving", false);
+            animator.SetFloat("Speed", 0);
+            return;
+        }
 
-    inputMove = inputActions.Gameplay.Move.ReadValue<Vector2>(); // ✅ Poll every frame
+        inputMove = inputActions.Gameplay.Move.ReadValue<Vector2>();
 
-    HandleGroundCheck();
-    HandleMovement();
-    HandleJump();
-    ApplyGravity();
-}
-
+        HandleGroundCheck();
+        HandleMovement();
+        HandleGravity();
+    }
 
     private void HandleGroundCheck()
     {
-        isGrounded = Physics.CheckSphere(groundCheck.position, groundCheckRadius, groundLayer);
+        isGrounded = Physics.CheckSphere(
+            groundCheck.position,
+            groundCheckRadius,
+            groundLayer,
+            QueryTriggerInteraction.Ignore
+        );
     }
 
     private void HandleMovement()
     {
-        Vector3 moveDir = new Vector3(inputMove.x, 0f, inputMove.y);
+        Vector3 inputDir = new Vector3(inputMove.x, 0, inputMove.y).normalized;
 
-        if (moveDir.magnitude >= 0.1f)
+        if (inputDir.magnitude >= 0.1f)
         {
-            Quaternion targetRotation = Quaternion.LookRotation(moveDir, Vector3.up);
-            transform.rotation = Quaternion.Lerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
+            Quaternion targetRotation = Quaternion.LookRotation(inputDir);
+            transform.rotation = Quaternion.Slerp(transform.rotation, targetRotation, Time.deltaTime * rotationSpeed);
 
-            Vector3 move = transform.forward * moveDir.magnitude;
-            controller.Move(move * moveSpeed * Time.deltaTime);
+            Vector3 targetVelocity = transform.forward * moveSpeed;
+            moveVelocity = Vector3.SmoothDamp(moveVelocity, targetVelocity, ref smoothVelocity, accelerationTime);
+            controller.Move(moveVelocity * Time.deltaTime);
 
             animator.SetBool("IsMoving", true);
-            animator.SetFloat("Speed", moveDir.magnitude);
+            animator.SetFloat("Speed", inputDir.magnitude);
         }
         else
         {
             animator.SetBool("IsMoving", false);
-            animator.SetFloat("Speed", 0f);
+            animator.SetFloat("Speed", 0);
+            moveVelocity = Vector3.SmoothDamp(moveVelocity, Vector3.zero, ref smoothVelocity, accelerationTime);
         }
     }
 
-    private void HandleJump()
-    {
-        if (hasJumped && isGrounded)
-        {
-            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
-            animator.SetTrigger("Jump");
-        }
-
-        hasJumped = false;
-    }
-
-    private void ApplyGravity()
+    private void HandleGravity()
     {
         if (isGrounded && velocity.y < 0)
         {
@@ -158,12 +154,29 @@ public class ThirdPersonCharacterController : MonoBehaviourPun
         controller.Move(velocity * Time.deltaTime);
     }
 
+    private void TryJump()
+    {
+        if (isGrounded && !groundedDelayActive && (chatInputField == null || !chatInputField.isFocused))
+        {
+            velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
+            animator.SetTrigger("Jump");
+        }
+    }
+
+    private void TryInteract()
+    {
+        if (isGrounded && (chatInputField == null || !chatInputField.isFocused))
+        {
+            animator.SetTrigger("Interact");
+        }
+    }
+
     private void UpdateMicUI()
     {
         if (micIcon == null || recorder == null) return;
 
         bool isSpeaking = recorder.LevelMeter.CurrentAvgAmp > 0.01f;
-        micIcon.color = isSpeaking ? Color.green : new Color(1f, 1f, 1f, 0.3f);
+        micIcon.color = isSpeaking ? Color.green : new Color(1, 1, 1, 0.3f);
     }
 
 #if UNITY_EDITOR

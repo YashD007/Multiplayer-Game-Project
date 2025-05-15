@@ -6,7 +6,7 @@ public class RoomManager : MonoBehaviourPunCallbacks
 {
     public GameObject player;
     public Transform[] spawnPoints;
-    public PhotonChatManager chatManager; // 👈 Drag your ChatManager here in the Inspector
+    // public PhotonChatManager chatManager; // 👈 Drag your ChatManager here in the Inspector
 
     void Start()
     {
@@ -34,6 +34,6 @@ public class RoomManager : MonoBehaviourPunCallbacks
         PhotonNetwork.Instantiate(player.name, spawnPosition, Quaternion.identity);
 
         // ✅ Start chat after room is joined
-        chatManager.StartChat(PhotonNetwork.NickName);
+        // chatManager.StartChat(PhotonNetwork.NickName);
     }
 }
